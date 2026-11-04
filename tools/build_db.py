@@ -15,7 +15,10 @@ from collections import defaultdict
 BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 DATA = os.path.join(BASE, 'data')
 DIST = os.path.join(BASE, 'dist')
-VERSION = '0.1.0'
+VERSION = '0.2.0'
+# v0.2.0 tongjia sense 草稿批次的期望计数（与发版报告一致，不一致即构建失败）
+TONGJIA_SENSE_GEN_EXPECTED = 504
+TONGJIA_SENSE_EMPTY_EXPECTED = 56
 BUILT_AT = '2026-11-04'
 
 
@@ -72,6 +75,20 @@ def main():
     assert all(r.get('gen', {}).get('by') == 'ai' and r.get('verified') == 'unverified' for r in podu), \
         'podu 每条须带 gen.by=ai 且 verified=unverified'
 
+    # ---- tongjia sense 批次断言（v0.2.0）----
+    gen_rows = [r for r in tongjia if r.get('sense_gen')]
+    empty_rows = [r for r in tongjia if not (r.get('sense') or '').strip()]
+    assert len(gen_rows) == TONGJIA_SENSE_GEN_EXPECTED, \
+        f'tongjia 带 sense_gen 条数 {len(gen_rows)} != 期望 {TONGJIA_SENSE_GEN_EXPECTED}'
+    assert len(empty_rows) == TONGJIA_SENSE_EMPTY_EXPECTED, \
+        f'tongjia sense 空缺 {len(empty_rows)} != 期望 {TONGJIA_SENSE_EMPTY_EXPECTED}'
+    assert all((r.get('sense') or '').strip() and r['sense_gen'].get('by') == 'ai'
+               and r.get('sense_verified') == 'unverified' for r in gen_rows), \
+        'sense_gen 条目须 sense 非空、by=ai、sense_verified=unverified'
+    sensed_orig = [r for r in tongjia if (r.get('sense') or '').strip() and not r.get('sense_gen')]
+    assert all(not r.get('sense_verified') for r in sensed_orig), \
+        '源自带 sense 的条目不应带 sense_verified 标记'
+
     counts = {'chars': len(chars), 'tongjia': len(tongjia), 'heteronyms': len(heteronyms),
               'phrases': len(phrases), 'podu': len(podu), 'substitutes': len(substitutes)}
     assert counts['chars'] >= 34000, counts
@@ -94,7 +111,8 @@ def main():
                         freq_rank INTEGER, in_8105 INTEGER NOT NULL, src TEXT NOT NULL, src_ref TEXT);
     CREATE TABLE tongjia (id INTEGER PRIMARY KEY, char TEXT NOT NULL, benzi TEXT NOT NULL,
                           reading TEXT NOT NULL, sense TEXT, example TEXT,
-                          char_simp TEXT, benzi_simp TEXT, src TEXT NOT NULL, src_ref TEXT);
+                          char_simp TEXT, benzi_simp TEXT, src TEXT NOT NULL, src_ref TEXT,
+                          sense_gen TEXT, sense_verified TEXT);
     CREATE INDEX idx_tongjia_char ON tongjia(char);
     CREATE TABLE heteronyms (word TEXT NOT NULL, readings TEXT NOT NULL, note TEXT,
                              src TEXT NOT NULL, src_ref TEXT);
@@ -115,10 +133,12 @@ def main():
                     [(r['char'], json.dumps(r['readings'], ensure_ascii=False), r['default'],
                       r['freq_rank'], 1 if r['in_8105'] else 0, r['src'], r.get('src_ref', ''))
                      for r in chars])
-    cur.executemany('INSERT INTO tongjia (char,benzi,reading,sense,example,char_simp,benzi_simp,src,src_ref)'
-                    ' VALUES (?,?,?,?,?,?,?,?,?)',
+    cur.executemany('INSERT INTO tongjia (char,benzi,reading,sense,example,char_simp,benzi_simp,src,src_ref,'
+                    'sense_gen,sense_verified) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
                     [(r['char'], r['benzi'], r['reading'], r['sense'], r['example'],
-                      r['char_simp'], r['benzi_simp'], r['src'], r.get('src_ref', '')) for r in tongjia])
+                      r['char_simp'], r['benzi_simp'], r['src'], r.get('src_ref', ''),
+                      json.dumps(r['sense_gen'], ensure_ascii=False) if r.get('sense_gen') else '',
+                      r.get('sense_verified', '')) for r in tongjia])
     cur.executemany('INSERT INTO heteronyms VALUES (?,?,?,?,?)',
                     [(r['word'], json.dumps(r['readings'], ensure_ascii=False), r['note'],
                       r['src'], r.get('src_ref', '')) for r in heteronyms])
@@ -148,7 +168,11 @@ def main():
              'used_for': 'heteronyms'},
             {'id': 'phrase-pinyin-data', 'license': 'MIT', 'used_for': 'phrases (clean files only)'},
             {'id': 'zhengyin-dict:podu-seed', 'license': 'CC0', 'used_for': 'podu (AI-generated, unverified)'},
+            {'id': 'zhengyin-dict:tongjia-sense-ai-draft', 'license': 'CC0',
+             'used_for': 'tongjia sense 草稿 504 条 (AI-generated, unverified; 字段级 sense_gen/sense_verified)'},
         ],
+        'tongjia_sense': {'ai_drafted_unverified': len(gen_rows),
+                          'still_empty': len(empty_rows)},
         'provenance_policy': meta['provenance_policy'],
         'db_file': 'zhengyin.db',
         'db_sha256': sha,

@@ -109,7 +109,7 @@ python3 tools/build_db.py        # 产出 dist/zhengyin.db + manifest，带断�
 | 层级 | 识别方法 | 含义 |
 |---|---|---|
 | 权威源直采 | `src` 为 `unihan:*` / `tongjiazi-resources` / `shenyinbiao-1985` / `phrase-pinyin-data:*` | 直接来自权威或已核实的开放数据源，加工过程可复现（见 SOURCES.md） |
-| AI 生成未核 | 带 `gen: {"by": "ai", …}` 且 `verified: "unverified"` | 由 AI 整理/生成，未经人工核验——**只可作提示，不可作定论**（目前只有 podu 种子属此类） |
+| AI 生成未核 | 带 `gen: {"by": "ai", …}` 且 `verified: "unverified"` | 由 AI 整理/生成，未经人工核验——**只可作提示，不可作定论**（podu 种子属此类；tongjia 的 504 条 `sense` 草稿同理，但标记是字段级的 `sense_gen` / `sense_verified`，见下） |
 | 人工已核 | `verified: "human_checked"` | 经人工逐条核过（目前尚无此层条目，等待贡献者核验 podu 后产生） |
 
 **给下游 CLI 的默认政策方向**：自动替换只能使用「权威源直采」与「人工已核」
@@ -122,8 +122,10 @@ python3 tools/build_db.py        # 产出 dist/zhengyin.db + manifest，带断�
 「供」（供奉、供给、供养……各为一条），也通「恭」（恭敬、恭肃……）。所以：
 
 - tongjia 表的唯一键按 **(char, reading, sense)** 理解，同字多条并列保存，
-  永不按字合并；每条尽量带 `sense`（源释义无义项文字的 560 条留空待补）
-  与 `example`（出处例句）。
+  永不按字合并；每条尽量带 `sense` 与 `example`（出处例句）。源释义无义项
+  文字的 560 条中，504 条已由 AI 依据例句起草 `sense`（v0.2.0，带字段级
+  `sense_gen` 标记、`sense_verified: "unverified"`，待人工核验），余
+  56 条继续留空待补。
 - podu 表同理：每条带 `context` 语境词例与一句 `sense`。
 
 **给下游 CLI 的政策方向**：通假替换优先换**本字**，做到音、义双对；同字同音
@@ -134,9 +136,11 @@ python3 tools/build_db.py        # 产出 dist/zhengyin.db + manifest，带断�
 
 ## 如何贡献
 
-欢迎 PR 补条目，尤其是：podu 破读新条、tongjia 的 `sense` 空缺补全、
-heteronyms 未落条的约 10 条、podu 现有条目的人工核验（核过请把
-`verified` 改为 `human_checked` 并在 PR 里说明依据）。
+欢迎 PR 补条目，尤其是：podu 破读新条、tongjia 余下 56 条 `sense`
+空缺补全、tongjia 504 条 AI 草稿 `sense` 的人工核验、heteronyms 未落条
+的约 10 条、podu 现有条目的人工核验（核过请把 `verified` 改为
+`human_checked` 并在 PR 里说明依据；tongjia 草稿核过请把该条
+`sense_verified` 改为 `human_checked`）。
 
 硬性要求：**每条新条目必须带出处**——
 
@@ -155,6 +159,8 @@ heteronyms 未落条的约 10 条、podu 现有条目的人工核验（核过请
 
 ## 路线图
 
+- tongjia 的 504 条 AI 草稿 `sense` 待人工逐条核验升档
+  （`sense_verified: "human_checked"`）；余 56 条空缺待人工补全；
 - heteronyms 未落条约 10 条的人工补录；
 - podu 破读表长期生长：靠人工贡献与下游 CLI「问答学习回路」回流
   （用户答、算法校验、人工核后入库）；
