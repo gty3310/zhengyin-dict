@@ -1,0 +1,4 @@
+sources_raw/
+dist/
+__pycache__/
+*.zip
