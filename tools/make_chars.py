@@ -57,7 +57,7 @@ def main():
         return out
 
     def raw_readings(ch):
-        """返回 (带调读音有序表, 用到的字段集合, pinlu最高频次)。"""
+        """返回 (带调读音有序表, 用到的字段集合, pinlu最高频次, pinlu读音表)。"""
         d = data.get(ch, {})
         fields, readings = set(), []
         if 'kHanyuPinyin' in d:
@@ -66,24 +66,26 @@ def main():
         if 'kXHC1983' in d:
             readings += split_readings(d['kXHC1983'])
             fields.add('kXHC1983')
-        pinlu_freq = 0
+        pinlu_freq, pinlu_readings = 0, []
         if 'kHanyuPinlu' in d:
-            pr, pinlu_freq = parse_pinlu(d['kHanyuPinlu'])
-            readings += pr
+            pinlu_readings, pinlu_freq = parse_pinlu(d['kHanyuPinlu'])
+            readings += pinlu_readings
             fields.add('kHanyuPinlu')
-        return readings, fields, pinlu_freq
+        return readings, fields, pinlu_freq, pinlu_readings
 
     records = {}
     pinlu_freq_of = {}
     for ch in sorted(set(data) | set(simp) | set(trad)):
-        own, used, pf = raw_readings(ch)
+        own, used, pf, own_pinlu = raw_readings(ch)
         allr = list(own)
+        pinlu_all = list(own_pinlu)
         via_variant = False
         for cp in counterparts(ch):
-            cr, cf, cpf = raw_readings(cp)
+            cr, cf, cpf, cpinlu = raw_readings(cp)
             if cf:
                 via_variant = True
             allr += cr
+            pinlu_all += cpinlu
             used |= cf
             pf = max(pf, cpf)
         mand = data.get(ch, {}).get('kMandarin')
@@ -115,6 +117,7 @@ def main():
         records[ch] = {
             'char': ch,
             'readings': readings,
+            'common_readings': dedupe([to_numbered(r) for r in pinlu_all if r]),
             'default': default,
             'freq_rank': None,
             'in_8105': in8105,
@@ -132,7 +135,8 @@ def main():
     with open(OUT, 'w', encoding='utf-8') as f:
         for ch in sorted(records, key=ord):
             f.write(json.dumps(records[ch], ensure_ascii=False) + '\n')
-    print(f'chars: {len(records)} 条，带 freq_rank {len(ranked)} 条，in_8105 {sum(r["in_8105"] for r in records.values())} 条')
+    n_common = sum(1 for r in records.values() if r['common_readings'])
+    print(f'chars: {len(records)} 条，带 freq_rank {len(ranked)} 条，in_8105 {sum(r["in_8105"] for r in records.values())} 条，带 common_readings {n_common} 条')
 
 
 if __name__ == '__main__':

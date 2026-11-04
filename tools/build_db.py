@@ -15,7 +15,7 @@ from collections import defaultdict
 BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 DATA = os.path.join(BASE, 'data')
 DIST = os.path.join(BASE, 'dist')
-VERSION = '0.2.0'
+VERSION = '0.2.1'
 # v0.2.0 tongjia sense 草稿批次的期望计数（与发版报告一致，不一致即构建失败）
 TONGJIA_SENSE_GEN_EXPECTED = 504
 TONGJIA_SENSE_EMPTY_EXPECTED = 56
@@ -72,6 +72,19 @@ def main():
     tj = {(r['char'], r['reading'], r['benzi']) for r in tongjia}
     assert ('共', 'gong1', '供') in tj and ('共', 'gong1', '恭') in tj, '共 gong1 应既通供又通恭'
     assert '悦' in substitutes.get('yue4', []), 'yue4 替字候选应含单音字“悦”'
+    # ---- common_readings 断言（v0.2.1 新增，源 kHanyuPinlu）----
+    def common_of(c):
+        return cmap[c].get('common_readings') or []
+    assert 'wei2' in common_of('為') and 'wei4' in common_of('為'), '為 common 应含 wei2/wei4'
+    assert 'xing1' in common_of('興'), '興 common 应含 xing1'
+    assert 'hao4' in common_of('好'), '好 common 应含 hao4'
+    assert 'wu4' in common_of('惡'), '惡 common 应含 wu4'
+    assert 'bo2' in common_of('薄'), '薄 common 应含 bo2'
+    assert 'xu4' in common_of('畜'), '畜 common 应含 xu4'
+    assert 'yao4' not in common_of('樂'), '樂 common 不应含 yao4'
+    assert common_of('乘') == ['cheng2'], '乘 common 应仅 cheng2'
+    n_common = sum(1 for r in chars if r.get('common_readings'))
+    assert n_common >= 3000, f'带 common_readings 字数 {n_common} < 3000'
     assert all(r.get('gen', {}).get('by') == 'ai' and r.get('verified') == 'unverified' for r in podu), \
         'podu 每条须带 gen.by=ai 且 verified=unverified'
 
@@ -108,7 +121,8 @@ def main():
     cur.executescript('''
     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
     CREATE TABLE chars (char TEXT PRIMARY KEY, readings TEXT NOT NULL, default_reading TEXT NOT NULL,
-                        freq_rank INTEGER, in_8105 INTEGER NOT NULL, src TEXT NOT NULL, src_ref TEXT);
+                        freq_rank INTEGER, in_8105 INTEGER NOT NULL, src TEXT NOT NULL, src_ref TEXT,
+                        common_readings TEXT);
     CREATE TABLE tongjia (id INTEGER PRIMARY KEY, char TEXT NOT NULL, benzi TEXT NOT NULL,
                           reading TEXT NOT NULL, sense TEXT, example TEXT,
                           char_simp TEXT, benzi_simp TEXT, src TEXT NOT NULL, src_ref TEXT,
@@ -129,9 +143,10 @@ def main():
                              'AI-generated records carry gen{by,model,date} and verified status',
     }
     cur.executemany('INSERT INTO meta VALUES (?,?)', sorted(meta.items()))
-    cur.executemany('INSERT INTO chars VALUES (?,?,?,?,?,?,?)',
+    cur.executemany('INSERT INTO chars VALUES (?,?,?,?,?,?,?,?)',
                     [(r['char'], json.dumps(r['readings'], ensure_ascii=False), r['default'],
-                      r['freq_rank'], 1 if r['in_8105'] else 0, r['src'], r.get('src_ref', ''))
+                      r['freq_rank'], 1 if r['in_8105'] else 0, r['src'], r.get('src_ref', ''),
+                      json.dumps(r.get('common_readings', []), ensure_ascii=False))
                      for r in chars])
     cur.executemany('INSERT INTO tongjia (char,benzi,reading,sense,example,char_simp,benzi_simp,src,src_ref,'
                     'sense_gen,sense_verified) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
@@ -173,6 +188,9 @@ def main():
         ],
         'tongjia_sense': {'ai_drafted_unverified': len(gen_rows),
                           'still_empty': len(empty_rows)},
+        'common_readings': {'derived_from': 'unihan:kHanyuPinlu',
+                            'chars_covered': n_common,
+                            'note': 'Pinlu 收录的读音即现代常用读音；CLI 据此判断目标音是否常用读音'},
         'provenance_policy': meta['provenance_policy'],
         'db_file': 'zhengyin.db',
         'db_sha256': sha,

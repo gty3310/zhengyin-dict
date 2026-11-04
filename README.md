@@ -36,6 +36,7 @@
 - `readings`：全部读音（源 Unihan kHanyuPinyin / kXHC1983，简繁异体互补）
 - `default`：字典默认读音（kMandarin）——判断「原样送 TTS 会不会读错」的基准
 - `freq_rank`：kHanyuPinlu 频次排名（越小越常用；无频次数据为 `null`）
+- `common_readings`：现代常用读音集（源 kHanyuPinlu 收录的全部读音，含异体互补；Pinlu 未收录的字为空表）
 - `in_8105`：是否在《通用规范汉字表》收录范围内（含繁体对应字形）
 
 ### phrases.jsonl — 词组消歧

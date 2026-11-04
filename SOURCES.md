@@ -12,7 +12,7 @@
 - 取用字段（`Unihan_Readings.txt` / `Unihan_Variants.txt`）：
   - `kMandarin` → `default`（该字最常用一读，即「字典默认读音」）
   - `kHanyuPinyin`、`kXHC1983` → `readings` 主体（全部读音，带调拼音转数字拼音）
-  - `kHanyuPinlu` → 读音补充与频次序 `freq_rank`（按频次降序排名）
+  - `kHanyuPinlu` → 读音补充与频次序 `freq_rank`（按频次降序排名）；其收录读音另派生 `common_readings`（现代常用读音集，v0.2.1 新增）
   - `kTGHZ2013` → `in_8105`（是否见于《通用规范汉字字典》2013，即通用规范汉字表体系）
   - `kSimplifiedVariant` → 简繁映射（供 tongjia 简体字段与异体互补用）
 - 加工：
