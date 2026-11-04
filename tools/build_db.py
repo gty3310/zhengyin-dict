@@ -15,7 +15,7 @@ from collections import defaultdict
 BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 DATA = os.path.join(BASE, 'data')
 DIST = os.path.join(BASE, 'dist')
-VERSION = '0.2.1'
+VERSION = '0.3.0'
 # v0.2.0 tongjia sense 草稿批次的期望计数（与发版报告一致，不一致即构建失败）
 TONGJIA_SENSE_GEN_EXPECTED = 504
 TONGJIA_SENSE_EMPTY_EXPECTED = 56
@@ -47,10 +47,11 @@ def main():
     heteronyms = load('heteronyms.jsonl')
     phrases = load('phrases.jsonl')
     podu = load('podu.jsonl')
+    prescribed = load('prescribed.jsonl')
 
     # ---- 自检：每条记录必须带 src ----
     for name, rows in [('chars', chars), ('tongjia', tongjia), ('heteronyms', heteronyms),
-                       ('phrases', phrases), ('podu', podu)]:
+                       ('phrases', phrases), ('podu', podu), ('prescribed', prescribed)]:
         bad = [r for r in rows if not r.get('src')]
         assert not bad, f'{name} 有 {len(bad)} 条缺 src'
 
@@ -88,6 +89,25 @@ def main():
     assert all(r.get('gen', {}).get('by') == 'ai' and r.get('verified') == 'unverified' for r in podu), \
         'podu 每条须带 gen.by=ai 且 verified=unverified'
 
+    # ---- prescribed 断言（v0.3.0 新增）----
+    assert len(prescribed) == 3, f'prescribed 条数 {len(prescribed)} != 期望 3'
+    for r in prescribed:
+        assert r.get('verified') == 'user_confirmed', f"prescribed 须 user_confirmed: {r}"
+        if len(r['key']) == 1:
+            sub = r['substitute']
+            assert len(sub) == 1 and sub in cmap, f"prescribed 字级替字须为 chars 中单字: {r}"
+            assert cmap[sub]['default'] == r['reading'], \
+                f"prescribed 字级 {r['key']} 替字 {sub} 默认音 {cmap[sub]['default']} != {r['reading']}"
+        else:
+            syllables = r['reading'].split()
+            assert len(r['substitute']) == len(syllables), \
+                f"prescribed 短语 {r['key']} 替字字数与读音音节数不一致: {r}"
+            for ch, syl in zip(r['substitute'], syllables):
+                assert ch in cmap, f"prescribed 短语替字 {ch} 不在 chars: {r}"
+                assert cmap[ch]['default'] == syl, \
+                    f"prescribed 短语 {r['key']} 替字 {ch} 默认音 {cmap[ch]['default']} != {syl}"
+
+
     # ---- tongjia sense 批次断言（v0.2.0）----
     gen_rows = [r for r in tongjia if r.get('sense_gen')]
     empty_rows = [r for r in tongjia if not (r.get('sense') or '').strip()]
@@ -103,12 +123,13 @@ def main():
         '源自带 sense 的条目不应带 sense_verified 标记'
 
     counts = {'chars': len(chars), 'tongjia': len(tongjia), 'heteronyms': len(heteronyms),
-              'phrases': len(phrases), 'podu': len(podu), 'substitutes': len(substitutes)}
+              'phrases': len(phrases), 'podu': len(podu), 'prescribed': len(prescribed), 'substitutes': len(substitutes)}
     assert counts['chars'] >= 34000, counts
     assert counts['tongjia'] >= 8000, counts
     assert counts['heteronyms'] >= 700, counts
     assert counts['phrases'] >= 30000, counts
     assert counts['podu'] >= 60, counts
+    assert counts['prescribed'] == 3, counts
     assert counts['substitutes'] >= 1000, counts
 
     # ---- 写 SQLite ----
@@ -134,6 +155,8 @@ def main():
     CREATE INDEX idx_phrases_phrase ON phrases(phrase);
     CREATE TABLE podu (char TEXT NOT NULL, context TEXT, reading TEXT NOT NULL, sense TEXT,
                        basis TEXT, confidence TEXT, src TEXT NOT NULL, gen TEXT, verified TEXT);
+    CREATE TABLE prescribed ("key" TEXT NOT NULL, reading TEXT NOT NULL, substitute TEXT NOT NULL,
+                             note TEXT, src TEXT NOT NULL, src_ref TEXT, verified TEXT);
     CREATE TABLE substitutes (reading TEXT PRIMARY KEY, candidates TEXT NOT NULL, src TEXT NOT NULL);
     ''')
     meta = {
@@ -163,6 +186,9 @@ def main():
                     [(r['char'], r['context'], r['reading'], r['sense'], r['basis'], r['confidence'],
                       r['src'], json.dumps(r.get('gen'), ensure_ascii=False), r.get('verified', ''))
                      for r in podu])
+    cur.executemany('INSERT INTO prescribed VALUES (?,?,?,?,?,?,?)',
+                    [(r['key'], r['reading'], r['substitute'], r.get('note', ''),
+                      r['src'], r.get('src_ref', ''), r.get('verified', '')) for r in prescribed])
     cur.executemany('INSERT INTO substitutes VALUES (?,?,?)',
                     [(reading, json.dumps(cands, ensure_ascii=False), 'zhengyin-dict:derived-from-chars')
                      for reading, cands in substitutes.items()])
@@ -185,6 +211,7 @@ def main():
             {'id': 'zhengyin-dict:podu-seed', 'license': 'CC0', 'used_for': 'podu (AI-generated, unverified)'},
             {'id': 'zhengyin-dict:tongjia-sense-ai-draft', 'license': 'CC0',
              'used_for': 'tongjia sense 草稿 504 条 (AI-generated, unverified; 字段级 sense_gen/sense_verified)'},
+            {'id': 'user-ruling', 'license': 'CC0', 'used_for': 'prescribed (用户裁断指定替字, user_confirmed)'},
         ],
         'tongjia_sense': {'ai_drafted_unverified': len(gen_rows),
                           'still_empty': len(empty_rows)},
