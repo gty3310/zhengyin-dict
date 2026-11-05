@@ -4,6 +4,17 @@
 kHanyuPinlu(频次序) / kTGHZ2013(通用规范汉字表收录标记)。
 加工：简繁异体字（kSimplifiedVariant 及其逆映射）之间互补读音——同一字的
 简繁两种字形在普通话中读音相同，主字段缺失时以异体字字段补齐，出处仍为 Unihan。
+现代读音三字段（v0.3.1 新增：modern_readings / modern_src，另派生
+is_polyphonic / unique_reading）：设 xhc＝本字 kXHC1983 读音集、
+pinlu＝本字 kHanyuPinlu 读音集（只用本字本身，不用异体互补后的集合）、
+default＝本条 default（kMandarin 默认音）。
+1) xhc 非空：modern＝xhc ∩ (pinlu ∪ {default})，交集为空则 modern＝xhc，
+   modern_src＝xhc1983（1983 词典里个别读音只存于古义/旧读，须经现代
+   频次实测过滤，如「惡」的 ě/wū 即如此滤掉）；
+2) xhc 空、pinlu 非空：modern＝pinlu，modern_src＝pinlu；
+3) 皆空：modern＝[default]，modern_src＝kmandarin-fallback。
+列表顺序：default 在集内时排第一，其余按 xhc（或 pinlu）原始顺序。
+is_polyphonic＝len(modern)>1；unique_reading＝len 恰 1 时为该读音、否则 null。
 许可证：Unicode License v3（见 LICENSES/ 与 SOURCES.md）。本脚本 CC0。"""
 import json
 import os
@@ -56,6 +67,42 @@ def main():
         out += trad.get(ch, [])
         return out
 
+    def own_xhc(ch):
+        """本字 kXHC1983 读音集（数字拼音，有序去重；不用异体互补）。"""
+        v = data.get(ch, {}).get('kXHC1983')
+        return dedupe([to_numbered(r) for r in split_readings(v)]) if v else []
+
+    def own_pinlu(ch):
+        """本字 kHanyuPinlu 读音集（数字拼音，有序去重；不用异体互补）。"""
+        v = data.get(ch, {}).get('kHanyuPinlu')
+        if not v:
+            return []
+        rs, _freq = parse_pinlu(v)
+        return dedupe([to_numbered(r) for r in rs])
+
+    def derive_modern(ch, default):
+        """按文件头派生规则返回 (modern_readings, modern_src)。"""
+        xhc = own_xhc(ch)
+        pinlu = own_pinlu(ch)
+        if xhc:
+            allow = set(pinlu) | {default}
+            inter = [r for r in xhc if r in allow]
+            modern = inter if inter else list(xhc)
+            order_src = xhc
+            src_m = 'xhc1983'
+        elif pinlu:
+            modern = list(pinlu)
+            order_src = pinlu
+            src_m = 'pinlu'
+        else:
+            return [default], 'kmandarin-fallback'
+        rest = [r for r in order_src if r in set(modern) and r != default]
+        ordered = ([default] if default in modern else []) + rest
+        for r in modern:
+            if r not in ordered:
+                ordered.append(r)
+        return ordered, src_m
+
     def raw_readings(ch):
         """返回 (带调读音有序表, 用到的字段集合, pinlu最高频次, pinlu读音表)。"""
         d = data.get(ch, {})
@@ -76,9 +123,9 @@ def main():
     records = {}
     pinlu_freq_of = {}
     for ch in sorted(set(data) | set(simp) | set(trad)):
-        own, used, pf, own_pinlu = raw_readings(ch)
+        own, used, pf, own_pinlu_list = raw_readings(ch)
         allr = list(own)
-        pinlu_all = list(own_pinlu)
+        pinlu_all = list(own_pinlu_list)
         via_variant = False
         for cp in counterparts(ch):
             cr, cf, cpf, cpinlu = raw_readings(cp)
@@ -114,11 +161,16 @@ def main():
         src_ref = ','.join(sorted(used))
         if via_variant:
             src_ref += '; incl. readings via simplified/traditional variant'
+        modern_readings, modern_src = derive_modern(ch, default)
         records[ch] = {
             'char': ch,
             'readings': readings,
             'common_readings': dedupe([to_numbered(r) for r in pinlu_all if r]),
             'default': default,
+            'modern_readings': modern_readings,
+            'modern_src': modern_src,
+            'is_polyphonic': len(modern_readings) > 1,
+            'unique_reading': modern_readings[0] if len(modern_readings) == 1 else None,
             'freq_rank': None,
             'in_8105': in8105,
             'src': src,
@@ -137,6 +189,9 @@ def main():
             f.write(json.dumps(records[ch], ensure_ascii=False) + '\n')
     n_common = sum(1 for r in records.values() if r['common_readings'])
     print(f'chars: {len(records)} 条，带 freq_rank {len(ranked)} 条，in_8105 {sum(r["in_8105"] for r in records.values())} 条，带 common_readings {n_common} 条')
+    for s in ('xhc1983', 'pinlu', 'kmandarin-fallback'):
+        print(f'modern_src={s}: {sum(1 for r in records.values() if r["modern_src"] == s)} 字')
+    print(f'modern 多音字 {sum(1 for r in records.values() if r["is_polyphonic"])} 字，单音字 {sum(1 for r in records.values() if not r["is_polyphonic"])} 字')
 
 
 if __name__ == '__main__':

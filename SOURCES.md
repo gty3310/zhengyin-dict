@@ -2,7 +2,7 @@
 
 本文件与每条记录的 `src` / `src_ref` 字段互为表里：`src` 标来源标识，
 本文件记每个来源的出处、许可证、取了什么、做了什么加工、排除了什么。
-构建日期 2026-11-04，数据版本 0.3.0。原始下载由 `tools/fetch_sources.sh` 复现，
+构建日期 2026-11-05，数据版本 0.3.1。原始下载由 `tools/fetch_sources.sh` 复现，
 原始文件不进 git（见 `.gitignore`）。
 
 ## 1. chars —— Unicode Unihan（`src: unihan:*`）
@@ -13,6 +13,7 @@
   - `kMandarin` → `default`（该字最常用一读，即「字典默认读音」）
   - `kHanyuPinyin`、`kXHC1983` → `readings` 主体（全部读音，带调拼音转数字拼音）
   - `kHanyuPinlu` → 读音补充与频次序 `freq_rank`（按频次降序排名）；其收录读音另派生 `common_readings`（现代常用读音集，v0.2.1 新增）
+  - `kXHC1983` → 另派生 `modern_readings` / `modern_src` / `is_polyphonic` / `unique_reading`（现代读音四字段，v0.3.1 新增，派生规则见下「加工」第 4 条）。出处：`Unihan_Readings.txt` 的 `kXHC1983` 字段，索引《现代汉语词典》（1983 年版）的条目位置与读音；许可证同为 **Unicode License v3**，不变
   - `kTGHZ2013` → `in_8105`（是否见于《通用规范汉字字典》2013，即通用规范汉字表体系）
   - `kSimplifiedVariant` → 简繁映射（供 tongjia 简体字段与异体互补用）
 - 加工：
@@ -23,6 +24,17 @@
   3. `in_8105` 同样经异体传播：繁体字形若其简体对应形见于规范表，亦记为真——
      故 `in_8105` 的口径是「在通用规范汉字表收录范围内（含其繁体对应字形）」，
      条数（10,899）大于 8105 本身，属正常。
+  4. **现代读音派生（v0.3.1）**：`modern_readings` 只用本字自身的字段，
+     不做异体互补。设 xhc＝本字 `kXHC1983` 读音集、pinlu＝本字
+     `kHanyuPinlu` 读音集、default＝本条 `default`（`kMandarin`）：
+     xhc 非空时 modern＝xhc ∩ (pinlu ∪ {default})、交集为空则取 xhc
+     全集，`modern_src`＝`xhc1983`；xhc 空、pinlu 非空时 modern＝pinlu，
+     `modern_src`＝`pinlu`；皆空时 modern＝[default]，`modern_src`＝
+     `kmandarin-fallback`。过滤理由：1983 词典里个别读音只存于古义/旧读，
+     须经现代频次实测（Pinlu）过滤，如「惡」xhc 含 ě/è/wū/wù 四读，
+     modern 只留 è/wù。`is_polyphonic`＝modern 多于一读；
+     `unique_reading`＝恰一读时为该读音、否则为 null。构建脚本对
+     「惡／好／國／為」四字与全表自洽性设断言，不过不许发版。
 - 规模：44,569 字；其中 3,960 字带 `freq_rank`。
 
 ## 2. tongjia —— 北师大通假字资源库（`src: tongjiazi-resources`）

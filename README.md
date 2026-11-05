@@ -9,11 +9,11 @@
 做自己的工具，也可以提 PR 补条目。许可证按来源分工（见 [LICENSE.md](LICENSE.md)），
 其中本仓自建部分以 **CC0** 发布、明确允许商用。
 
-当前版本 **0.3.0**（2026-11-04）：
+当前版本 **0.3.1**（2026-11-05）：
 
 | 表 | 条数 | 内容 |
 |---|---|---|
-| chars | 44,569 | 单字全部读音 + 默认读音 + 频次序 |
+| chars | 44,569 | 单字全部读音 + 默认读音 + 现代读音 + 频次序 |
 | phrases | 53,995 | 词组逐字拼音（多音消歧） |
 | tongjia | 8,009 | 通假关系（字+读音+义项 → 本字），全带出处例句 |
 | heteronyms | 829 | 《普通话异读词审音表》(1985) 现代异读 |
@@ -38,7 +38,21 @@
 - `default`：字典默认读音（kMandarin）——判断「原样送 TTS 会不会读错」的基准
 - `freq_rank`：kHanyuPinlu 频次排名（越小越常用；无频次数据为 `null`）
 - `common_readings`：现代常用读音集（源 kHanyuPinlu 收录的全部读音，含异体互补；Pinlu 未收录的字为空表）
+- `modern_readings`：该字在现代汉语中的读音集（数字拼音，v0.3.1 新增），派生规则见下
+- `modern_src`：`modern_readings` 的依据等级，三档：`xhc1983`／`pinlu`／`kmandarin-fallback`
+- `is_polyphonic`：在现代汉语中是否多音，即 `len(modern_readings) > 1`
+- `unique_reading`：现代读音恰一个时为该读音，否则为 `null`——下游可据此判定「现代单音字」
 - `in_8105`：是否在《通用规范汉字表》收录范围内（含繁体对应字形）
+
+`modern_readings` 派生规则（实现见 `tools/make_chars.py`）：设 xhc＝本字
+kXHC1983 读音集、pinlu＝本字 kHanyuPinlu 读音集（只用本字本身，不用异体
+互补后的集合）、default＝本条 `default`。① xhc 非空：modern＝xhc ∩
+(pinlu ∪ {default})，交集为空则 modern＝xhc，`modern_src`＝`xhc1983`
+（1983 词典里个别读音只存于古义/旧读，须经现代频次实测过滤，如「惡」
+的 ě/wū 即如此滤掉，只留 è/wù）；② xhc 空、pinlu 非空：modern＝pinlu，
+`modern_src`＝`pinlu`；③ 皆空：modern＝[default]，`modern_src`＝
+`kmandarin-fallback`。列表顺序：default 在集内时排第一，其余按 xhc
+（或 pinlu）原始顺序。
 
 ### phrases.jsonl — 词组消歧
 

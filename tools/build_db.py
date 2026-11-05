@@ -15,11 +15,11 @@ from collections import defaultdict
 BASE = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..')
 DATA = os.path.join(BASE, 'data')
 DIST = os.path.join(BASE, 'dist')
-VERSION = '0.3.0'
+VERSION = '0.3.1'
 # v0.2.0 tongjia sense 草稿批次的期望计数（与发版报告一致，不一致即构建失败）
 TONGJIA_SENSE_GEN_EXPECTED = 504
 TONGJIA_SENSE_EMPTY_EXPECTED = 56
-BUILT_AT = '2026-11-04'
+BUILT_AT = '2026-11-05'
 
 
 def load(name):
@@ -89,6 +89,28 @@ def main():
     assert all(r.get('gen', {}).get('by') == 'ai' and r.get('verified') == 'unverified' for r in podu), \
         'podu 每条须带 gen.by=ai 且 verified=unverified'
 
+    # ---- modern_readings 断言（v0.3.1 新增，源 kXHC1983 / kHanyuPinlu / kMandarin）----
+    assert len(chars) == 44569, f'chars 总条数 {len(chars)} != 期望 44569'
+
+    def modern_of(c):
+        return cmap[c].get('modern_readings') or []
+    assert set(modern_of('惡')) == {'e4', 'wu4'}, f"惡 modern 应为 {{e4, wu4}}，实得 {modern_of('惡')}"
+    assert cmap['惡'].get('is_polyphonic') is True, '惡 is_polyphonic 应为 true'
+    assert set(modern_of('好')) == {'hao3', 'hao4'}, f"好 modern 应为 {{hao3, hao4}}，实得 {modern_of('好')}"
+    assert cmap['好'].get('is_polyphonic') is True, '好 is_polyphonic 应为 true'
+    assert cmap['國'].get('unique_reading') == 'guo2', f"國 unique_reading 应为 guo2，实得 {cmap['國'].get('unique_reading')}"
+    assert cmap['國'].get('is_polyphonic') is False, '國 is_polyphonic 应为 false'
+    assert set(modern_of('為')) == {'wei2', 'wei4'}, f"為 modern 应为 {{wei2, wei4}}，实得 {modern_of('為')}"
+    for r in chars:
+        m = r.get('modern_readings') or []
+        assert m, f"chars {r['char']} modern_readings 为空"
+        assert r.get('modern_src') in ('xhc1983', 'pinlu', 'kmandarin-fallback'), \
+            f"chars {r['char']} modern_src 非法: {r.get('modern_src')}"
+        assert r.get('is_polyphonic') == (len(m) > 1), \
+            f"chars {r['char']} is_polyphonic 与 modern_readings 长度不自洽"
+        assert r.get('unique_reading') == (m[0] if len(m) == 1 else None), \
+            f"chars {r['char']} unique_reading 与 modern_readings 不自洽"
+
     # ---- prescribed 断言（v0.3.0 新增）----
     assert len(prescribed) == 3, f'prescribed 条数 {len(prescribed)} != 期望 3'
     for r in prescribed:
@@ -143,7 +165,8 @@ def main():
     CREATE TABLE meta (key TEXT PRIMARY KEY, value TEXT);
     CREATE TABLE chars (char TEXT PRIMARY KEY, readings TEXT NOT NULL, default_reading TEXT NOT NULL,
                         freq_rank INTEGER, in_8105 INTEGER NOT NULL, src TEXT NOT NULL, src_ref TEXT,
-                        common_readings TEXT);
+                        common_readings TEXT, modern_readings TEXT, modern_src TEXT,
+                        is_polyphonic INTEGER, unique_reading TEXT);
     CREATE TABLE tongjia (id INTEGER PRIMARY KEY, char TEXT NOT NULL, benzi TEXT NOT NULL,
                           reading TEXT NOT NULL, sense TEXT, example TEXT,
                           char_simp TEXT, benzi_simp TEXT, src TEXT NOT NULL, src_ref TEXT,
@@ -166,10 +189,13 @@ def main():
                              'AI-generated records carry gen{by,model,date} and verified status',
     }
     cur.executemany('INSERT INTO meta VALUES (?,?)', sorted(meta.items()))
-    cur.executemany('INSERT INTO chars VALUES (?,?,?,?,?,?,?,?)',
+    cur.executemany('INSERT INTO chars VALUES (?,?,?,?,?,?,?,?,?,?,?,?)',
                     [(r['char'], json.dumps(r['readings'], ensure_ascii=False), r['default'],
                       r['freq_rank'], 1 if r['in_8105'] else 0, r['src'], r.get('src_ref', ''),
-                      json.dumps(r.get('common_readings', []), ensure_ascii=False))
+                      json.dumps(r.get('common_readings', []), ensure_ascii=False),
+                      json.dumps(r.get('modern_readings', []), ensure_ascii=False),
+                      r.get('modern_src', ''), 1 if r.get('is_polyphonic') else 0,
+                      r.get('unique_reading'))
                      for r in chars])
     cur.executemany('INSERT INTO tongjia (char,benzi,reading,sense,example,char_simp,benzi_simp,src,src_ref,'
                     'sense_gen,sense_verified) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
@@ -218,6 +244,13 @@ def main():
         'common_readings': {'derived_from': 'unihan:kHanyuPinlu',
                             'chars_covered': n_common,
                             'note': 'Pinlu 收录的读音即现代常用读音；CLI 据此判断目标音是否常用读音'},
+        'modern_readings': {'derived_from': 'unihan:kXHC1983 ∩ (unihan:kHanyuPinlu ∪ {kMandarin default}); '
+                                            'xhc 为空时取 kHanyuPinlu 本字读音，再空时取 kMandarin 默认音',
+                            'chars_by_src': {s: sum(1 for r in chars if r.get('modern_src') == s)
+                                             for s in ('xhc1983', 'pinlu', 'kmandarin-fallback')},
+                            'polyphonic_chars': sum(1 for r in chars if r.get('is_polyphonic')),
+                            'single_reading_chars': sum(1 for r in chars if not r.get('is_polyphonic')),
+                            'note': '该字在现代汉语中的读音集；pinlu 只取本字本身读音，不用异体互补集合'},
         'provenance_policy': meta['provenance_policy'],
         'db_file': 'zhengyin.db',
         'db_sha256': sha,
